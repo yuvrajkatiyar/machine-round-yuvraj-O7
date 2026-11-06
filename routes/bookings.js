@@ -102,6 +102,48 @@ router.get("/", async (req, res, next) => {
     }
 })
 
+router.get("/history/:userId", async (req, res, next) => {
+    const { userId } = req.params
+    if (!mongoose.isValidObjectId(userId)) {
+        return res.status(400).json({ message: "Invalid user id" })
+    }
+    if (req.user.role !== "admin" && req.user.id !== userId) {
+        return res.status(403).json({ message: "You can only view your own booking history" })
+    }
+
+    const page = req.query.page === undefined ? 1 : Number(req.query.page)
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit)
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ message: "page must be positive and limit must be between 1 and 100" })
+    }
+
+    try {
+        const filter = {
+            passenger: userId,
+            travelClass: "Luxury",
+            fare: { $gt: 1000 }
+        }
+        const [bookings, total] = await Promise.all([
+            Booking.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+            Booking.countDocuments(filter)
+        ])
+        return res.json({
+            bookings: bookings.map((booking) => ({
+                ...booking.toObject(),
+                finalFare: booking.fare
+            })),
+            pagination: {
+                page,
+                limit,
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        })
+    } catch (error) {
+        return next(error)
+    }
+})
+
 router.get("/:id", async (req, res, next) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
         return res.status(400).json({ message: "Invalid booking id" })
